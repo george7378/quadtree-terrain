@@ -1,0 +1,1 @@
+_world = new World(new NoiseHeightProvider("islands!".GetHashCode(), 4, 0.2f, 20, 250, -17), 2500, light);

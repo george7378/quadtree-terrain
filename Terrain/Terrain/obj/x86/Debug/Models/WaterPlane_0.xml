@@ -1,0 +1,36 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<XnaContent xmlns:Graphics="Microsoft.Xna.Framework.Content.Pipeline.Graphics" xmlns:Framework="Microsoft.Xna.Framework">
+  <Asset Type="Graphics:NodeContent">
+    <Name>Root</Name>
+    <Identity>
+      <SourceFilename>C:\Users\George &amp; Charlotte\documents\visual studio 2015\Projects\Terrain\Terrain\TerrainContent\Models\WaterPlane.x</SourceFilename>
+      <SourceTool>XImporter</SourceTool>
+    </Identity>
+    <Transform>1 0 0 0 0 0 -1 0 0 -1 0 0 0 0 0 1</Transform>
+    <Children>
+      <Child>
+        <Name>Plane</Name>
+        <Transform>1 0 0 0 0 1 0 0 0 0 1 0 0 0 0 1</Transform>
+        <Children>
+          <Child Type="Graphics:MeshContent">
+            <Name></Name>
+            <Transform>1 0 0 0 0 1 0 0 0 0 1 0 0 0 0 1</Transform>
+            <Positions>-0.5 0 -0.5 -0.5 0 0.5 0.5 0 0.5 0.5 0 -0.5</Positions>
+            <Geometry>
+              <Batch>
+                <Indices>0 1 2 0 2 3</Indices>
+                <Vertices>
+                  <PositionIndices>3 2 1 0</PositionIndices>
+                  <Channels>
+                    <VertexChannel Name="Normal0" ElementType="Framework:Vector3">0 1 0 0 1 0 0 1 0 0 1 0</VertexChannel>
+                    <VertexChannel Name="TextureCoordinate0" ElementType="Framework:Vector2">1 1 1 0 0 0 0 1</VertexChannel>
+                  </Channels>
+                </Vertices>
+              </Batch>
+            </Geometry>
+          </Child>
+        </Children>
+      </Child>
+    </Children>
+  </Asset>
+</XnaContent>
