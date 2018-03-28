@@ -1,7 +1,0 @@
-Content\Effects\TerrainEffect.xnb
-Content\Effects\WaterEffect.xnb
-Content\Textures\ground.xnb
-Content\Textures\groundSlope.xnb
-Content\Textures\waterNormal.xnb
-Content\Textures\groundDetail.xnb
-Content\Models\WaterPlane.xnb
