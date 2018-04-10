@@ -18,11 +18,6 @@ namespace Terrain.XNA
         #region Constants
 
         /// <summary>
-        /// Size of the terrain vertex buffer in cells
-        /// </summary>
-        private const int TerrainVertexBufferSize = 1000;
-
-        /// <summary>
         /// Size of the water refraction/reflection maps in pixels
         /// </summary>
         private const int WaterMapSize = 512;
@@ -46,14 +41,13 @@ namespace Terrain.XNA
 
         private Effect _terrainEffect, _waterEffect;
 
-        private VertexBuffer _terrainVertexBuffer;
-        private VertexPositionNormalBlend[] _terrainVertexBufferData;
-
         private Model _waterPlaneModel;
 
         private Texture2D _groundTexture, _groundSlopeTexture, _groundDetailTexture;
         private Texture2D _waterNormalMap;
         private RenderTarget2D _waterRefractionMapTarget, _waterReflectionMapTarget;
+
+        private Dictionary<IndexBufferSelection, IndexBuffer> _quadTreeNodeIndexBuffers;
 
         #endregion
 
@@ -61,8 +55,7 @@ namespace Terrain.XNA
 
         public TerrainGame()
         {
-            _graphics = new GraphicsDeviceManager(this);
-            _graphics.PreferMultiSampling = true;
+            _graphics = new GraphicsDeviceManager(this) { PreferMultiSampling = true };
 
             //_graphics.PreferredBackBufferWidth = 1920; 
             //_graphics.PreferredBackBufferHeight = 1080; 
@@ -76,12 +69,6 @@ namespace Terrain.XNA
         #region Private methods
 
         #region Content initialisation/loading
-
-        private void InitialiseTerrain()
-        {
-            _terrainVertexBuffer = new VertexBuffer(GraphicsDevice, VertexPositionNormalBlend.VertexDeclaration, TerrainVertexBufferSize*4, BufferUsage.WriteOnly);
-            _terrainVertexBufferData = new VertexPositionNormalBlend[TerrainVertexBufferSize*4];
-        }
 
         private void LoadWaterPlane()
         {
@@ -100,47 +87,24 @@ namespace Terrain.XNA
 
         #region Content drawing
 
+        /// <summary>
+        /// Alternative implementation could use one large vertex buffer which matches the size of the render queue
+        /// and is drawn once (making use of baseVertex parameter in DrawIndexedPrimitives for the indexing) or one
+        /// small vertex buffer which is filled with the data for each node before being drawn multiple times
+        /// </summary>
         private void DrawTerrainRenderQueue()
         {
-            List<QuadTreeNode> culledRenderQueue = _world.CurrentRenderQueue.Where(n => _camera.Frustum.Intersects(n.BoundingBox)).ToList();
-            QuadTreeNode lastNodeInCulledRenderQueue = culledRenderQueue.LastOrDefault();
-            int numNodesBuffered = 0;
-
-            foreach (QuadTreeNode node in culledRenderQueue)
+            foreach (QuadTreeNode node in _world.CurrentRenderQueue.Where(node => _camera.Frustum.Intersects(node.BoundingBox)))
             {
-                // Place the current node in the buffer data
-                int curIndex = 4*numNodesBuffered;
-                _terrainVertexBufferData[curIndex] = node.VertexNorthWest.CrackFixVertex ?? node.VertexNorthWest.MainVertex;
-                _terrainVertexBufferData[curIndex + 1] = node.VertexSouthWest.CrackFixVertex ?? node.VertexSouthWest.MainVertex;
-                _terrainVertexBufferData[curIndex + 2] = node.VertexNorthEast.CrackFixVertex ?? node.VertexNorthEast.MainVertex;
-                _terrainVertexBufferData[curIndex + 3] = node.VertexSouthEast.CrackFixVertex ?? node.VertexSouthEast.MainVertex;
+                IndexBuffer activeIndexBuffer = _quadTreeNodeIndexBuffers[node.ActiveIndexBuffer];
 
-                numNodesBuffered += 1;
+                GraphicsDevice.SetVertexBuffer(node.VertexBuffer);
+                GraphicsDevice.Indices = activeIndexBuffer;
 
-                // The buffer data is full - need to render the contents and refill from the beginning
-                if (numNodesBuffered >= TerrainVertexBufferSize)
-                {
-                    _terrainVertexBuffer.SetData(_terrainVertexBufferData);
-                    GraphicsDevice.SetVertexBuffer(_terrainVertexBuffer);
-                    for (int i = 0; i < numNodesBuffered; i++)
-                    {
-                        GraphicsDevice.DrawPrimitives(PrimitiveType.TriangleStrip, i*4, 2);
-                    }
-                    GraphicsDevice.SetVertexBuffer(null);
+                GraphicsDevice.DrawIndexedPrimitives(PrimitiveType.TriangleList, 0, 0, node.VertexBuffer.VertexCount, 0, activeIndexBuffer.IndexCount/3);
 
-                    numNodesBuffered = 0;
-                }
-                // We have no more nodes to render after this one
-                else if (node == lastNodeInCulledRenderQueue)
-                {
-                    _terrainVertexBuffer.SetData(_terrainVertexBufferData, 0, numNodesBuffered*4);
-                    GraphicsDevice.SetVertexBuffer(_terrainVertexBuffer);
-                    for (int i = 0; i < numNodesBuffered; i++)
-                    {
-                        GraphicsDevice.DrawPrimitives(PrimitiveType.TriangleStrip, i*4, 2);
-                    }
-                    GraphicsDevice.SetVertexBuffer(null);
-                }
+                GraphicsDevice.SetVertexBuffer(null);
+                GraphicsDevice.Indices = null;
             }
         }
 
@@ -165,8 +129,10 @@ namespace Terrain.XNA
             _terrainEffect.Parameters["TerrainDetailTexture"].SetValue(_groundDetailTexture);
 
             if (reflectionMatrix != null)
+            {
                 GraphicsDevice.RasterizerState = RasterizerState.CullClockwise;
-
+            }
+            
             foreach (EffectPass pass in _terrainEffect.CurrentTechnique.Passes)
             {
                 pass.Apply();
@@ -179,7 +145,7 @@ namespace Terrain.XNA
         private void DrawWaterPlane()
         {
             Matrix waterWorldMatrix = Matrix.CreateScale(_world.TerrainRootEdgeLength)*Matrix.CreateTranslation(_world.TerrainCentrePosition);
-
+            
             GraphicsDevice.BlendState = BlendState.NonPremultiplied;
 
             foreach (ModelMesh mesh in _waterPlaneModel.Meshes)
@@ -214,6 +180,92 @@ namespace Terrain.XNA
 
         #endregion
 
+        private IndexBuffer CreateIndexBuffer(bool northCrackFix = false, bool eastCrackFix = false, bool southCrackFix = false, bool westCrackFix = false)
+        {
+            // Resulting triangles are wound CCW
+            List<ushort> resultIndices = new List<ushort>();
+
+            for (int y = 0; y < QuadTreeNode.VerticesPerEdge - 1; y++)
+            {
+                bool slantLeft = y % 2 == 0;
+
+                for (int x = 0; x < QuadTreeNode.VerticesPerEdge - 1; x++)
+                {
+                    ushort nwIndex = (ushort)(x + y*QuadTreeNode.VerticesPerEdge);
+                    ushort neIndex = (ushort)(x + 1 + y*QuadTreeNode.VerticesPerEdge);
+                    ushort seIndex = (ushort)(x + 1 + (y + 1)*QuadTreeNode.VerticesPerEdge);
+                    ushort swIndex = (ushort)(x + (y + 1)*QuadTreeNode.VerticesPerEdge);
+
+                    ushort[] triangle1 = slantLeft ? new ushort[3] { nwIndex, swIndex, seIndex } : new ushort[3] { nwIndex, swIndex, neIndex };
+                    ushort[] triangle2 = slantLeft ? new ushort[3] { nwIndex, seIndex, neIndex } : new ushort[3] { swIndex, seIndex, neIndex };
+
+                    // Perform requested crack fixing
+                    if (northCrackFix && y == 0)
+                    {
+                        if (x % 2 == 0)
+                        {
+                            triangle2 = new ushort[3] { nwIndex, seIndex, (ushort)(neIndex + 1) };
+                        }
+                        else
+                        {
+                            triangle1 = null;
+                        }
+                    }
+                    if (eastCrackFix && x == QuadTreeNode.VerticesPerEdge - 2)
+                    {
+                        if (y % 2 == 0)
+                        {
+                            triangle2 = new ushort[3] { neIndex, swIndex, (ushort)(seIndex + QuadTreeNode.VerticesPerEdge) };
+                        }
+                        else
+                        {
+                            triangle2 = null;
+                        }
+                    }
+                    if (southCrackFix && y == QuadTreeNode.VerticesPerEdge - 2)
+                    {
+                        if (x % 2 == 0)
+                        {
+                            triangle2 = new ushort[3] { swIndex, (ushort)(seIndex + 1), neIndex };
+                        }
+                        else
+                        {
+                            triangle1 = null;
+                        }
+                    }
+                    if (westCrackFix && x == 0)
+                    {
+                        if (y % 2 == 0)
+                        {
+                            triangle1 = new ushort[3] { nwIndex, (ushort)(swIndex + QuadTreeNode.VerticesPerEdge), seIndex };
+                        }
+                        else
+                        {
+                            triangle1 = null;
+                        }
+                    }
+
+                    if (triangle1 != null)
+                    {
+                        resultIndices.AddRange(triangle1);
+                    }
+                    if (triangle2 != null)
+                    {
+                        resultIndices.AddRange(triangle2);
+                    }
+
+                    slantLeft = !slantLeft;
+                }
+            }
+
+            ushort[] resultIndicesData = resultIndices.ToArray();
+
+            IndexBuffer result = new IndexBuffer(GraphicsDevice, typeof(ushort), resultIndicesData.Length, BufferUsage.WriteOnly);
+            result.SetData(resultIndicesData);
+
+            return result;
+        }
+
         private void ProcessInput(GameTime gameTime)
         {
             KeyboardState newKeyboardState = Keyboard.GetState();
@@ -221,14 +273,18 @@ namespace Terrain.XNA
 
             // Linear motion
             if (_oldKeyboardState.IsKeyDown(Keys.Space) && newKeyboardState.IsKeyUp(Keys.Space))
+            {
                 _camera.WalkModeActive = !_camera.WalkModeActive;
+            }
 
             float forwardDelta = newKeyboardState.IsKeyDown(Keys.W) ? gameTime.ElapsedGameTime.Milliseconds : newKeyboardState.IsKeyDown(Keys.S) ? -gameTime.ElapsedGameTime.Milliseconds : 0;
             float rightDelta = newKeyboardState.IsKeyDown(Keys.D) ? gameTime.ElapsedGameTime.Milliseconds : newKeyboardState.IsKeyDown(Keys.A) ? -gameTime.ElapsedGameTime.Milliseconds : 0;
 
             // Angular motion
             if (_oldKeyboardState.IsKeyDown(Keys.C) && newKeyboardState.IsKeyUp(Keys.C))
+            {
                 _mouseLookActive = !_mouseLookActive;
+            }
 
             float yawDelta = 0, pitchDelta = 0;
             if (_mouseLookActive)
@@ -251,15 +307,21 @@ namespace Terrain.XNA
         {
             _waterCoordsOffset1.X += gameTime.ElapsedGameTime.Milliseconds/100000.0f;
             if (_waterCoordsOffset1.X > 1)
+            {
                 _waterCoordsOffset1.X -= 1;
+            }
 
             _waterCoordsOffset1.Y += gameTime.ElapsedGameTime.Milliseconds/100000.0f;
             if (_waterCoordsOffset1.Y > 1)
+            {
                 _waterCoordsOffset1.Y -= 1;
+            }
 
             _waterCoordsOffset2.X -= gameTime.ElapsedGameTime.Milliseconds/150000.0f;
             if (_waterCoordsOffset2.X < 0)
+            {
                 _waterCoordsOffset2.X += 1;
+            }
         }
         
         #endregion
@@ -283,15 +345,26 @@ namespace Terrain.XNA
             _waterCoordsOffset2 = new Vector2();
 
             DirectionLight light = new DirectionLight(new Vector3(0, -0.3f, -1), 1, 0.1f);
-            _world = new World(new NoiseHeightProvider(124, 4, 0.2f, 20, 100, 0), 2500, light);
+            _world = new World(GraphicsDevice, new NoiseHeightProvider(124, 4, 0.2f, 20, 100, 0), 2500, light);
 
-            Matrix projectionMatrix = Matrix.CreatePerspectiveFieldOfView(MathHelper.ToRadians(60), GraphicsDevice.Viewport.AspectRatio, 5, _world.TerrainRootEdgeLength/4);
+            Matrix projectionMatrix = Matrix.CreatePerspectiveFieldOfView(MathHelper.ToRadians(60), GraphicsDevice.Viewport.AspectRatio, 5, _world.TerrainRootEdgeLength/4.0f);
             _camera = new Camera(new Vector3(0, 1, 0), new Vector3(0, 0, -1), new Vector3(0, 30, 0), projectionMatrix, _world.HeightProvider);
 
-            InitialiseTerrain();
-            
             _waterRefractionMapTarget = new RenderTarget2D(GraphicsDevice, WaterMapSize, WaterMapSize, false, GraphicsDevice.PresentationParameters.BackBufferFormat, DepthFormat.Depth24);
             _waterReflectionMapTarget = new RenderTarget2D(GraphicsDevice, WaterMapSize, WaterMapSize, false, GraphicsDevice.PresentationParameters.BackBufferFormat, DepthFormat.Depth24);
+
+            _quadTreeNodeIndexBuffers = new Dictionary<IndexBufferSelection, IndexBuffer>
+            {
+                { IndexBufferSelection.Base, CreateIndexBuffer() },
+                { IndexBufferSelection.NCrackFix, CreateIndexBuffer(true, false, false, false) },
+                { IndexBufferSelection.ECrackFix, CreateIndexBuffer(false, true, false, false) },
+                { IndexBufferSelection.SCrackFix, CreateIndexBuffer(false, false, true, false) },
+                { IndexBufferSelection.WCrackFix, CreateIndexBuffer(false, false, false, true) },
+                { IndexBufferSelection.NwCrackFix, CreateIndexBuffer(true, false, false, true) },
+                { IndexBufferSelection.NeCrackFix, CreateIndexBuffer(true, true, false, false) },
+                { IndexBufferSelection.SeCrackFix, CreateIndexBuffer(false, true, true, false) },
+                { IndexBufferSelection.SwCrackFix, CreateIndexBuffer(false, false, true, true) }
+            };
 
             base.Initialize();
         }
@@ -331,7 +404,9 @@ namespace Terrain.XNA
         {
             // Allows the game to exit
             if (GamePad.GetState(PlayerIndex.One).Buttons.Back == ButtonState.Pressed)
-                this.Exit();
+            {
+                Exit();
+            }
 
             ProcessInput(gameTime);
             UpdateWater(gameTime);
@@ -366,10 +441,9 @@ namespace Terrain.XNA
                 DrawTerrain();
                 DrawWaterPlane();
 
-                base.Draw(gameTime);
+            base.Draw(gameTime);
         }
 
         #endregion
     }
 }
-

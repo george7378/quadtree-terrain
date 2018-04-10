@@ -3,12 +3,15 @@ using System.Collections.Generic;
 using System.Threading;
 using Microsoft.Xna.Framework;
 using Terrain.QuadTree;
+using Microsoft.Xna.Framework.Graphics;
 
 namespace Terrain.Environment
 {
     public class World
     {
         #region Fields
+
+        private readonly GraphicsDevice _graphicsDevice;
 
         private QuadTreeNode _rootNode, _updatedRootNode;
 
@@ -33,9 +36,11 @@ namespace Terrain.Environment
 
         #region Constructors
 
-        public World(IHeightProvider heightProvider, int edgeLength, DirectionLight light)
+        public World(GraphicsDevice graphicsDevice, IHeightProvider heightProvider, int edgeLength, DirectionLight light)
         {
-            _rootNode = new QuadTreeNode(NodeType.Root, null, 0, 0, edgeLength, heightProvider);
+            _graphicsDevice = graphicsDevice;
+
+            _rootNode = new QuadTreeNode(NodeType.Root, null, 0, 0, edgeLength, _graphicsDevice, heightProvider);
 
             HeightProvider = heightProvider;
             TerrainRootEdgeLength = edgeLength;
@@ -52,12 +57,14 @@ namespace Terrain.Environment
         {
             try
             {
-                float[] updatedRootNodePosition = parameters as float[];
-                if (updatedRootNodePosition == null || updatedRootNodePosition.Length != 3)
+                Vector3? cameraPosition = parameters as Vector3?;
+                if (!cameraPosition.HasValue)
+                {
                     throw new ArgumentException("Invalid parameters during creation of updated root node");
+                }
 
-                QuadTreeNode updatedRootNode = new QuadTreeNode(NodeType.Root, null, updatedRootNodePosition[0], updatedRootNodePosition[2], TerrainRootEdgeLength, HeightProvider);
-                updatedRootNode.UpdateChildrenRecursively(new Vector3(updatedRootNodePosition[0], updatedRootNodePosition[1], updatedRootNodePosition[2]), null, HeightProvider);
+                QuadTreeNode updatedRootNode = new QuadTreeNode(NodeType.Root, null, cameraPosition.Value.X, cameraPosition.Value.Z, TerrainRootEdgeLength, _graphicsDevice, HeightProvider);
+                updatedRootNode.UpdateChildrenRecursively(cameraPosition.Value, null, _graphicsDevice, HeightProvider);
 
                 lock (_lockObject)
                 {
@@ -82,16 +89,16 @@ namespace Terrain.Environment
             lock (_lockObject)
             {
                 // Create an updated root node as we are too far from the centre of the current one
-                if (_updatedRootNode == null && !_updatedRootNodeInConstruction && Vector2.Distance(new Vector2(cameraPosition.X, cameraPosition.Z), new Vector2(_rootNode.CentrePoint.MainVertex.Position.X, _rootNode.CentrePoint.MainVertex.Position.Z)) > _rootNode.QuarterEdgeLength)
+                if (_updatedRootNode == null && !_updatedRootNodeInConstruction && Vector2.Distance(new Vector2(cameraPosition.X, cameraPosition.Z), new Vector2(_rootNode.CentrePoint.X, _rootNode.CentrePoint.Z)) > _rootNode.QuarterEdgeLength)
                 {
                     _updatedRootNodeInConstruction = true;
                     TerrainCentrePosition = new Vector3(cameraPosition.X, 0, cameraPosition.Z);
 
                     Thread createNewRootNodeThread = new Thread(CreateUpdatedRootNode);
-                    createNewRootNodeThread.Start(new float[3] { cameraPosition.X, cameraPosition.Y, cameraPosition.Z });
+                    createNewRootNodeThread.Start(cameraPosition);
                 }
             }
-            
+
             CurrentRenderQueue.Clear();
 
             lock (_lockObject)
@@ -104,12 +111,12 @@ namespace Terrain.Environment
                 }
             }
 
-            _rootNode.UpdateChildrenRecursively(cameraPosition, CurrentRenderQueue, HeightProvider);
+            _rootNode.UpdateChildrenRecursively(cameraPosition, CurrentRenderQueue, _graphicsDevice, HeightProvider);
             _rootNode.UpdateNeighboursRecursively();
-            
-            CurrentRenderQueue.ForEach(n => n.UpdateCrackFixVertices());
-        }
 
+            CurrentRenderQueue.ForEach(node => node.FixCracks());
+        }
+        
         #endregion
     }
 }

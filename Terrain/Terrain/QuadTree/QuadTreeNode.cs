@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using Microsoft.Xna.Framework;
 using Terrain.Environment;
 using Terrain.Utility;
+using Microsoft.Xna.Framework.Graphics;
 
 namespace Terrain.QuadTree
 {
@@ -10,10 +11,15 @@ namespace Terrain.QuadTree
     {
         #region Constants
 
-        private static readonly float EdgeLengthLimit = 2;
-        private static readonly float SplitDistanceMultiplier = 10;
-        private static readonly float NormalSampleOffset = 1;
+        /// <summary>
+        /// Must be odd number and > 1
+        /// </summary>
+        public const int VerticesPerEdge = 5;
 
+        private const float EdgeLengthLimit = 10;
+        private const float SplitDistanceMultiplier = 4;
+        private const float NormalSampleOffset = 1;
+        
         #endregion
 
         #region Fields
@@ -23,6 +29,7 @@ namespace Terrain.QuadTree
         private readonly float _edgeLength, _halfEdgeLength;
 
         private readonly NodeType _nodeType;
+        
         private bool _hasChildren;
 
         #endregion
@@ -52,34 +59,28 @@ namespace Terrain.QuadTree
         public QuadTreeNode NeighbourWest { get; private set; }
 
         #endregion
+
+        public Vector3 CentrePoint { get; private set; }
         
-        #region Vertices
-
-        public TerrainVertexContainer CentrePoint { get; private set; }
-
-        public TerrainVertexContainer VertexNorthWest { get; private set; }
-
-        public TerrainVertexContainer VertexNorthEast { get; private set; }
-
-        public TerrainVertexContainer VertexSouthEast { get; private set; }
-
-        public TerrainVertexContainer VertexSouthWest { get; private set; }
-
-        #endregion
-
         public float QuarterEdgeLength { get; private set; }
 
+        public VertexBuffer VertexBuffer { get; private set; }
+
         public BoundingBox BoundingBox { get; private set; }
+
+        public IndexBufferSelection ActiveIndexBuffer { get; private set; }
 
         #endregion
 
         #region Constructors
 
-        public QuadTreeNode(NodeType nodeType, QuadTreeNode parentNode, float centreX, float centreZ, float edgeLength, IHeightProvider heightProvider)
+        public QuadTreeNode(NodeType nodeType, QuadTreeNode parentNode, float centreX, float centreZ, float edgeLength, GraphicsDevice graphicsDevice, IHeightProvider heightProvider)
         {
             if (parentNode == null && nodeType != NodeType.Root)
+            {
                 throw new ArgumentException("A non-root node must have a parent");
-
+            }
+            
             _parentNode = parentNode;
 
             _edgeLength = edgeLength;
@@ -87,75 +88,48 @@ namespace Terrain.QuadTree
 
             _nodeType = nodeType;
 
-            CentrePoint = new TerrainVertexContainer(new VertexPositionNormalBlend(heightProvider.GetVectorWithHeight(centreX, centreZ), heightProvider.GetNormalFromFiniteOffset(centreX, centreZ, NormalSampleOffset)));
-
-            float offsetNorth = CentrePoint.MainVertex.Position.Z + _halfEdgeLength;
-            float offsetEast = CentrePoint.MainVertex.Position.X + _halfEdgeLength;
-            float offsetSouth = CentrePoint.MainVertex.Position.Z - _halfEdgeLength;
-            float offsetWest = CentrePoint.MainVertex.Position.X - _halfEdgeLength;
-            switch (_nodeType)
-            {
-                case NodeType.Root:
-                    VertexNorthWest = new TerrainVertexContainer(new VertexPositionNormalBlend(heightProvider.GetVectorWithHeight(offsetWest, offsetNorth), heightProvider.GetNormalFromFiniteOffset(offsetWest, offsetNorth, NormalSampleOffset)));
-                    VertexNorthEast = new TerrainVertexContainer(new VertexPositionNormalBlend(heightProvider.GetVectorWithHeight(offsetEast, offsetNorth), heightProvider.GetNormalFromFiniteOffset(offsetEast, offsetNorth, NormalSampleOffset)));
-                    VertexSouthEast = new TerrainVertexContainer(new VertexPositionNormalBlend(heightProvider.GetVectorWithHeight(offsetEast, offsetSouth), heightProvider.GetNormalFromFiniteOffset(offsetEast, offsetSouth, NormalSampleOffset)));
-                    VertexSouthWest = new TerrainVertexContainer(new VertexPositionNormalBlend(heightProvider.GetVectorWithHeight(offsetWest, offsetSouth), heightProvider.GetNormalFromFiniteOffset(offsetWest, offsetSouth, NormalSampleOffset)));
-                    break;
-
-                case NodeType.NorthWest:
-                    VertexNorthWest = _parentNode.VertexNorthWest;
-                    VertexNorthEast = new TerrainVertexContainer(new VertexPositionNormalBlend(heightProvider.GetVectorWithHeight(offsetEast, offsetNorth), heightProvider.GetNormalFromFiniteOffset(offsetEast, offsetNorth, NormalSampleOffset)));
-                    VertexSouthEast = _parentNode.CentrePoint;
-                    VertexSouthWest = new TerrainVertexContainer(new VertexPositionNormalBlend(heightProvider.GetVectorWithHeight(offsetWest, offsetSouth), heightProvider.GetNormalFromFiniteOffset(offsetWest, offsetSouth, NormalSampleOffset)));
-                    break;
-
-                case NodeType.NorthEast:
-                    VertexNorthWest = _parentNode.ChildNorthWest.VertexNorthEast;
-                    VertexNorthEast = _parentNode.VertexNorthEast;
-                    VertexSouthEast = new TerrainVertexContainer(new VertexPositionNormalBlend(heightProvider.GetVectorWithHeight(offsetEast, offsetSouth), heightProvider.GetNormalFromFiniteOffset(offsetEast, offsetSouth, NormalSampleOffset)));
-                    VertexSouthWest = _parentNode.ChildNorthWest.VertexSouthEast;
-                    break;
-
-                case NodeType.SouthEast:
-                    VertexNorthWest = _parentNode.ChildNorthEast.VertexSouthWest;
-                    VertexNorthEast = _parentNode.ChildNorthEast.VertexSouthEast;
-                    VertexSouthEast = _parentNode.VertexSouthEast;
-                    VertexSouthWest = new TerrainVertexContainer(new VertexPositionNormalBlend(heightProvider.GetVectorWithHeight(offsetWest, offsetSouth), heightProvider.GetNormalFromFiniteOffset(offsetWest, offsetSouth, NormalSampleOffset)));
-                    break;
-
-                case NodeType.SouthWest:
-                    VertexNorthWest = _parentNode.ChildNorthWest.VertexSouthWest;
-                    VertexNorthEast = _parentNode.ChildSouthEast.VertexNorthWest;
-                    VertexSouthEast = _parentNode.ChildSouthEast.VertexSouthWest;
-                    VertexSouthWest = _parentNode.VertexSouthWest;
-                    break;
-            }
+            CentrePoint = heightProvider.GetVectorWithHeight(centreX, centreZ);
 
             QuarterEdgeLength = _edgeLength/4;
 
-            CalculateBoundingBox();
+            CalculateVertexBufferAndBoundingBox(graphicsDevice, heightProvider);
+
+            ActiveIndexBuffer = IndexBufferSelection.Base;
         }
 
         #endregion
 
-        #region Private methods
+        #region Private methods       
 
-        private void CalculateBoundingBox()
+        private void CalculateVertexBufferAndBoundingBox(GraphicsDevice graphicsDevice, IHeightProvider heightProvider)
         {
+            float offsetNorth = CentrePoint.Z + _halfEdgeLength;
+            float offsetWest = CentrePoint.X - _halfEdgeLength;
+            float vertexSpacing = _edgeLength/(VerticesPerEdge - 1);
+
             Vector3 min = new Vector3(float.MaxValue, float.MaxValue, float.MaxValue);
             Vector3 max = new Vector3(float.MinValue, float.MinValue, float.MinValue);
 
-            min = Vector3.Min(min, VertexNorthWest.CrackFixVertex == null ? VertexNorthWest.MainVertex.Position : VertexNorthWest.CrackFixVertex.Value.Position);
-            max = Vector3.Max(max, VertexNorthWest.CrackFixVertex == null ? VertexNorthWest.MainVertex.Position : VertexNorthWest.CrackFixVertex.Value.Position);
+            List<VertexPositionNormalBlend> resultVertices = new List<VertexPositionNormalBlend>();
+            for (int y = 0; y < VerticesPerEdge; y++)
+            {
+                for (int x = 0; x < VerticesPerEdge; x++)
+                {
+                    float positionX = offsetWest + x*vertexSpacing;
+                    float positionZ = offsetNorth - y*vertexSpacing;
 
-            min = Vector3.Min(min, VertexNorthEast.CrackFixVertex == null ? VertexNorthEast.MainVertex.Position : VertexNorthEast.CrackFixVertex.Value.Position);
-            max = Vector3.Max(max, VertexNorthEast.CrackFixVertex == null ? VertexNorthEast.MainVertex.Position : VertexNorthEast.CrackFixVertex.Value.Position);
+                    VertexPositionNormalBlend vertex = new VertexPositionNormalBlend(heightProvider.GetVectorWithHeight(positionX, positionZ), heightProvider.GetNormalFromFiniteOffset(positionX, positionZ, NormalSampleOffset));
+                    resultVertices.Add(vertex);
 
-            min = Vector3.Min(min, VertexSouthEast.CrackFixVertex == null ? VertexSouthEast.MainVertex.Position : VertexSouthEast.CrackFixVertex.Value.Position);
-            max = Vector3.Max(max, VertexSouthEast.CrackFixVertex == null ? VertexSouthEast.MainVertex.Position : VertexSouthEast.CrackFixVertex.Value.Position);
+                    min = Vector3.Min(min, vertex.Position);
+                    max = Vector3.Max(max, vertex.Position);
+                }
+            }
 
-            min = Vector3.Min(min, VertexSouthWest.CrackFixVertex == null ? VertexSouthWest.MainVertex.Position : VertexSouthWest.CrackFixVertex.Value.Position);
-            max = Vector3.Max(max, VertexSouthWest.CrackFixVertex == null ? VertexSouthWest.MainVertex.Position : VertexSouthWest.CrackFixVertex.Value.Position);
+            VertexPositionNormalBlend[] resultVerticesData = resultVertices.ToArray();
+
+            VertexBuffer = new VertexBuffer(graphicsDevice, VertexPositionNormalBlend.VertexDeclaration, resultVerticesData.Length, BufferUsage.WriteOnly);
+            VertexBuffer.SetData(resultVerticesData);
 
             BoundingBox = new BoundingBox(min, max);
         }
@@ -164,26 +138,26 @@ namespace Terrain.QuadTree
 
         #region Methods
 
-        public void UpdateChildrenRecursively(Vector3 cameraPosition, List<QuadTreeNode> renderQueue, IHeightProvider heightProvider)
+        public void UpdateChildrenRecursively(Vector3 cameraPosition, List<QuadTreeNode> renderQueue, GraphicsDevice graphicsDevice, IHeightProvider heightProvider)
         {
             // Node should have children
-            if (_halfEdgeLength > EdgeLengthLimit && (CentrePoint.MainVertex.Position - cameraPosition).Length() < SplitDistanceMultiplier*_edgeLength)
+            if (_halfEdgeLength > EdgeLengthLimit && (CentrePoint - cameraPosition).Length() < SplitDistanceMultiplier*_edgeLength)
             {
                 // Add children if they aren't there
                 if (!_hasChildren)
                 {
-                    ChildNorthWest = new QuadTreeNode(NodeType.NorthWest, this, CentrePoint.MainVertex.Position.X - QuarterEdgeLength, CentrePoint.MainVertex.Position.Z + QuarterEdgeLength, _halfEdgeLength, heightProvider);
-                    ChildNorthEast = new QuadTreeNode(NodeType.NorthEast, this, CentrePoint.MainVertex.Position.X + QuarterEdgeLength, CentrePoint.MainVertex.Position.Z + QuarterEdgeLength, _halfEdgeLength, heightProvider);
-                    ChildSouthEast = new QuadTreeNode(NodeType.SouthEast, this, CentrePoint.MainVertex.Position.X + QuarterEdgeLength, CentrePoint.MainVertex.Position.Z - QuarterEdgeLength, _halfEdgeLength, heightProvider);
-                    ChildSouthWest = new QuadTreeNode(NodeType.SouthWest, this, CentrePoint.MainVertex.Position.X - QuarterEdgeLength, CentrePoint.MainVertex.Position.Z - QuarterEdgeLength, _halfEdgeLength, heightProvider);
+                    ChildNorthWest = new QuadTreeNode(NodeType.NorthWest, this, CentrePoint.X - QuarterEdgeLength, CentrePoint.Z + QuarterEdgeLength, _halfEdgeLength, graphicsDevice, heightProvider);
+                    ChildNorthEast = new QuadTreeNode(NodeType.NorthEast, this, CentrePoint.X + QuarterEdgeLength, CentrePoint.Z + QuarterEdgeLength, _halfEdgeLength, graphicsDevice, heightProvider);
+                    ChildSouthEast = new QuadTreeNode(NodeType.SouthEast, this, CentrePoint.X + QuarterEdgeLength, CentrePoint.Z - QuarterEdgeLength, _halfEdgeLength, graphicsDevice, heightProvider);
+                    ChildSouthWest = new QuadTreeNode(NodeType.SouthWest, this, CentrePoint.X - QuarterEdgeLength, CentrePoint.Z - QuarterEdgeLength, _halfEdgeLength, graphicsDevice, heightProvider);
 
                     _hasChildren = true;
                 }
 
-                ChildNorthWest.UpdateChildrenRecursively(cameraPosition, renderQueue, heightProvider);
-                ChildNorthEast.UpdateChildrenRecursively(cameraPosition, renderQueue, heightProvider);
-                ChildSouthEast.UpdateChildrenRecursively(cameraPosition, renderQueue, heightProvider);
-                ChildSouthWest.UpdateChildrenRecursively(cameraPosition, renderQueue, heightProvider);
+                ChildNorthWest.UpdateChildrenRecursively(cameraPosition, renderQueue, graphicsDevice, heightProvider);
+                ChildNorthEast.UpdateChildrenRecursively(cameraPosition, renderQueue, graphicsDevice, heightProvider);
+                ChildSouthEast.UpdateChildrenRecursively(cameraPosition, renderQueue, graphicsDevice, heightProvider);
+                ChildSouthWest.UpdateChildrenRecursively(cameraPosition, renderQueue, graphicsDevice, heightProvider);
             }
             // Node shouldn't have children
             else
@@ -200,7 +174,9 @@ namespace Terrain.QuadTree
                 }
                 
                 if (renderQueue != null)
+                {
                     renderQueue.Add(this);
+                }
             }
         }
 
@@ -210,18 +186,26 @@ namespace Terrain.QuadTree
             {
                 case NodeType.NorthWest:
                     if (_parentNode.NeighbourNorth != null)
+                    {
                         NeighbourNorth = _parentNode.NeighbourNorth.ChildSouthWest;
+                    }
                     NeighbourEast = _parentNode.ChildNorthEast;
                     NeighbourSouth = _parentNode.ChildSouthWest;
                     if (_parentNode.NeighbourWest != null)
+                    {
                         NeighbourWest = _parentNode.NeighbourWest.ChildNorthEast;
+                    }
                     break;
 
                 case NodeType.NorthEast:
                     if (_parentNode.NeighbourNorth != null)
+                    {
                         NeighbourNorth = _parentNode.NeighbourNorth.ChildSouthEast;
+                    }
                     if (_parentNode.NeighbourEast != null)
+                    {
                         NeighbourEast = _parentNode.NeighbourEast.ChildNorthWest;
+                    }
                     NeighbourSouth = _parentNode.ChildSouthEast;
                     NeighbourWest = _parentNode.ChildNorthWest;
                     break;
@@ -229,9 +213,13 @@ namespace Terrain.QuadTree
                 case NodeType.SouthEast:
                     NeighbourNorth = _parentNode.ChildNorthEast;
                     if (_parentNode.NeighbourEast != null)
+                    {
                         NeighbourEast = _parentNode.NeighbourEast.ChildSouthWest;
+                    }
                     if (_parentNode.NeighbourSouth != null)
+                    {
                         NeighbourSouth = _parentNode.NeighbourSouth.ChildNorthEast;
+                    }
                     NeighbourWest = _parentNode.ChildSouthWest;
                     break;
 
@@ -239,9 +227,13 @@ namespace Terrain.QuadTree
                     NeighbourNorth = _parentNode.ChildNorthWest;
                     NeighbourEast = _parentNode.ChildSouthEast;
                     if (_parentNode.NeighbourSouth != null)
+                    {
                         NeighbourSouth = _parentNode.NeighbourSouth.ChildNorthWest;
+                    }
                     if (_parentNode.NeighbourWest != null)
+                    {
                         NeighbourWest = _parentNode.NeighbourWest.ChildSouthEast;
+                    }
                     break;
             }
 
@@ -254,65 +246,72 @@ namespace Terrain.QuadTree
             }
         }
 
-        public void UpdateCrackFixVertices()
+        public void FixCracks()
         {
-            bool boundingBoxInvalidated = false;
+            ActiveIndexBuffer = IndexBufferSelection.Base;
 
             switch (_nodeType)
             {
                 case NodeType.NorthWest:
-                    if (NeighbourNorth == null && VertexNorthEast.CrackFixVertex == null)
+                    if (NeighbourNorth == null && NeighbourWest == null)
                     {
-                        VertexNorthEast.CrackFixVertex = new VertexPositionNormalBlend(new Vector3(VertexNorthEast.MainVertex.Position.X, (_parentNode.VertexNorthWest.MainVertex.Position.Y + _parentNode.VertexNorthEast.MainVertex.Position.Y)/2, VertexNorthEast.MainVertex.Position.Z), Vector3.Lerp(_parentNode.VertexNorthWest.MainVertex.Normal, _parentNode.VertexNorthEast.MainVertex.Normal, 0.5f));
-                        boundingBoxInvalidated = true;
+                        ActiveIndexBuffer = IndexBufferSelection.NwCrackFix;
                     }
-                    else if (NeighbourNorth != null && VertexNorthEast.CrackFixVertex != null)
+                    else if (NeighbourNorth == null)
                     {
-                        VertexNorthEast.CrackFixVertex = null;
-                        boundingBoxInvalidated = true;
+                        ActiveIndexBuffer = IndexBufferSelection.NCrackFix;
                     }
-
-                    if (NeighbourWest == null && VertexSouthWest.CrackFixVertex == null)
+                    else if (NeighbourWest == null)
                     {
-                        VertexSouthWest.CrackFixVertex = new VertexPositionNormalBlend(new Vector3(VertexSouthWest.MainVertex.Position.X, (_parentNode.VertexSouthWest.MainVertex.Position.Y + _parentNode.VertexNorthWest.MainVertex.Position.Y)/2, VertexSouthWest.MainVertex.Position.Z), Vector3.Lerp(_parentNode.VertexSouthWest.MainVertex.Normal, _parentNode.VertexNorthWest.MainVertex.Normal, 0.5f));
-                        boundingBoxInvalidated = true;
-                    }
-                    else if (NeighbourWest != null && VertexSouthWest.CrackFixVertex != null)
-                    {
-                        VertexSouthWest.CrackFixVertex = null;
-                        boundingBoxInvalidated = true;
+                        ActiveIndexBuffer = IndexBufferSelection.WCrackFix;
                     }
                     break;
 
                 case NodeType.NorthEast:
-                    if (NeighbourEast == null && VertexSouthEast.CrackFixVertex == null)
+                    if (NeighbourNorth == null && NeighbourEast == null)
                     {
-                        VertexSouthEast.CrackFixVertex = new VertexPositionNormalBlend(new Vector3(VertexSouthEast.MainVertex.Position.X, (_parentNode.VertexNorthEast.MainVertex.Position.Y + _parentNode.VertexSouthEast.MainVertex.Position.Y)/2, VertexSouthEast.MainVertex.Position.Z), Vector3.Lerp(_parentNode.VertexNorthEast.MainVertex.Normal, _parentNode.VertexSouthEast.MainVertex.Normal, 0.5f));
-                        boundingBoxInvalidated = true;
+                        ActiveIndexBuffer = IndexBufferSelection.NeCrackFix;
                     }
-                    else if (NeighbourEast != null && VertexSouthEast.CrackFixVertex != null)
+                    else if (NeighbourNorth == null)
                     {
-                        VertexSouthEast.CrackFixVertex = null;
-                        boundingBoxInvalidated = true;
+                        ActiveIndexBuffer = IndexBufferSelection.NCrackFix;
+                    }
+                    else if (NeighbourEast == null)
+                    {
+                        ActiveIndexBuffer = IndexBufferSelection.ECrackFix;
                     }
                     break;
 
                 case NodeType.SouthEast:
-                    if (NeighbourSouth == null && VertexSouthWest.CrackFixVertex == null)
+                    if (NeighbourSouth == null && NeighbourEast == null)
                     {
-                        VertexSouthWest.CrackFixVertex = new VertexPositionNormalBlend(new Vector3(VertexSouthWest.MainVertex.Position.X, (_parentNode.VertexSouthEast.MainVertex.Position.Y + _parentNode.VertexSouthWest.MainVertex.Position.Y)/2, VertexSouthWest.MainVertex.Position.Z), Vector3.Lerp(_parentNode.VertexSouthEast.MainVertex.Normal, _parentNode.VertexSouthWest.MainVertex.Normal, 0.5f));
-                        boundingBoxInvalidated = true;
+                        ActiveIndexBuffer = IndexBufferSelection.SeCrackFix;
                     }
-                    else if (NeighbourSouth != null && VertexSouthWest.CrackFixVertex != null)
+                    else if (NeighbourSouth == null)
                     {
-                        VertexSouthWest.CrackFixVertex = null;
-                        boundingBoxInvalidated = true;
+                        ActiveIndexBuffer = IndexBufferSelection.SCrackFix;
+                    }
+                    else if (NeighbourEast == null)
+                    {
+                        ActiveIndexBuffer = IndexBufferSelection.ECrackFix;
+                    }
+                    break;
+
+                case NodeType.SouthWest:
+                    if (NeighbourSouth == null && NeighbourWest == null)
+                    {
+                        ActiveIndexBuffer = IndexBufferSelection.SwCrackFix;
+                    }
+                    else if (NeighbourSouth == null)
+                    {
+                        ActiveIndexBuffer = IndexBufferSelection.SCrackFix;
+                    }
+                    else if (NeighbourWest == null)
+                    {
+                        ActiveIndexBuffer = IndexBufferSelection.WCrackFix;
                     }
                     break;
             }
-
-            if (boundingBoxInvalidated)
-                CalculateBoundingBox();
         }
         
         #endregion

@@ -78,6 +78,7 @@
     <Compile Include="Environment\World.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
     <Compile Include="Program.cs" />
+    <Compile Include="QuadTree\IndexBufferSelection.cs" />
     <Compile Include="QuadTree\NodeType.cs" />
     <Compile Include="QuadTree\QuadTreeNode.cs" />
     <Compile Include="Utility\TerrainVertexContainer.cs" />

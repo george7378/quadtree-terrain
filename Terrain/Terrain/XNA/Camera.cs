@@ -42,7 +42,9 @@ namespace Terrain.XNA
         public Camera(Vector3 upDirection, Vector3 initialLookDirection, Vector3 initialPosition, Matrix projectionMatrix, IHeightProvider walkModeHeightProvider)
         {
             if (Math.Abs(Vector3.Dot(initialLookDirection, upDirection))/(initialLookDirection.Length()*upDirection.Length()) > MaxLookUpDotProduct)
+            {
                 throw new ArgumentException("upDirection and initialLookDirection do not have a sufficiently large angle between them");
+            }
 
             _vectorUp = upDirection;
             _vectorUp.Normalize();
@@ -86,14 +88,16 @@ namespace Terrain.XNA
             {
                 float cameraHeight = WalkModeHeightProvider.GetHeight(Position.X, Position.Z);
                 if (cameraHeight < 0)
+                {
                     cameraHeight = 0;
+                }
                 Position = new Vector3(Position.X, cameraHeight + WalkModeEyeHeight, Position.Z);
             }
 
             // Update view matrix and frustum
             ViewMatrix = Matrix.CreateLookAt(Position, Position + _vectorLook, _vectorUp);
             Frustum = new BoundingFrustum(ViewMatrix*ProjectionMatrix);
-            //Frustum = new BoundingFrustum(Matrix.CreateLookAt(new Vector3(0, 5, 0), new Vector3(0, 5, -1), _vectorUp)*ProjectionMatrix);
+            //Frustum = new BoundingFrustum(Matrix.CreateLookAt(new Vector3(0, 30, 0), new Vector3(0, 30, -1), _vectorUp)*ProjectionMatrix);
         }
 
         #endregion

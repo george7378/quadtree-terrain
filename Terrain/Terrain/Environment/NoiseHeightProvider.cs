@@ -71,7 +71,7 @@ namespace Terrain.Environment
 
         #endregion
         
-        #region IHeightProvider implementations
+        #region IHeightProvider implementation
 
         public float GetHeight(float x, float z)
         {
