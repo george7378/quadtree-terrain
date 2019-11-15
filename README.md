@@ -1,6 +1,4 @@
 # quadtree-terrain
-> Check out my other project, [Perilune](https://github.com/george7378/perilune), for another (slightly modified) example of this terrain system in action!
-
 QuadTree Terrain is a C#/XNA program demonstrating a quadtree terrain splitting algorithm which can be used to render very large-scale worlds.
 
 As you move around the terrain, the level of detail will increase/decrease based on camera distance. The scene is built using deterministic noise which can be modified by changing the parameters in the code. There is also a water plane which adds a bit of variety to the landscape.
