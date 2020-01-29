@@ -1,5 +1,5 @@
 # quadtree-terrain
->For a similar terrain system which uses chunks, check out [this project](https://github.com/george7378/chunked-terrain)
+>For a similar terrain system which uses chunks, check out [this project](https://github.com/george7378/chunked-terrain).
 
 QuadTree Terrain is a C#/XNA program demonstrating a quadtree terrain splitting algorithm which can be used to render very large-scale worlds.
 
