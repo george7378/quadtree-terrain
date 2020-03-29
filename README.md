@@ -1,5 +1,5 @@
 # quadtree-terrain
->For a similar terrain system which uses chunks, check out [this project](https://github.com/george7378/chunked-terrain). Also take a look at [this article](http://www.gkristiansen.co.uk/2018/04/an-algorithm-for-infinite-worlds.html) which goes into more high-level detail regarding the algorithm.
+>For a similar terrain system which uses chunks, check out [this project](https://github.com/george7378/chunked-terrain). Check [here](https://github.com/george7378/magrathea) to see this adaptive terrain algorithm applied to full-scale planets. Also take a look at [this article](http://www.gkristiansen.co.uk/2018/04/an-algorithm-for-infinite-worlds.html) which goes into more high-level detail regarding the algorithm.
 
 QuadTree Terrain is a C#/XNA program demonstrating a quadtree terrain splitting algorithm which can be used to render very large-scale worlds.
 
