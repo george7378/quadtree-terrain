@@ -7,6 +7,6 @@ As you move around the terrain, the level of detail will increase/decrease based
 
 You can explore the world using the mouse and keyboard. When the program starts, you must press **C** to attach the mouse to the camera. You can then use the **WASD** keys to fly around. If you press **Space**, the camera will follow the contours of the terrain as you move.
 
-![Sunlight reflecting off the scene](https://raw.githubusercontent.com/george7378/quadtree-terrain/master/_img/1.png)
-![Some calm lakes](https://raw.githubusercontent.com/george7378/quadtree-terrain/master/_img/2.png)
-![Naked terrain](https://raw.githubusercontent.com/george7378/quadtree-terrain/master/_img/3.png)
+![Sunlight reflecting off the scene](https://raw.githubusercontent.com/george7378/quadtree-terrain/master/misc/readme/1.png)
+![Some calm lakes](https://raw.githubusercontent.com/george7378/quadtree-terrain/master/misc/readme/2.png)
+![Naked terrain](https://raw.githubusercontent.com/george7378/quadtree-terrain/master/misc/readme/3.png)
